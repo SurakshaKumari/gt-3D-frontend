@@ -1,1 +1,1 @@
-# gt-3D-frontend
+Frontend Setup:
