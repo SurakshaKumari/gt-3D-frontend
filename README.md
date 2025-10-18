@@ -1,3 +1,7 @@
+# 🚀 3D Platform
+
+A real-time 3D model collaboration platform with annotations and chat functionality.
+
 Technologies Used
 Core Framework
 React - UI library for building user interfaces
