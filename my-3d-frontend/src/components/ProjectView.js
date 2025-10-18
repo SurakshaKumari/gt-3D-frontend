@@ -1,4 +1,3 @@
-// src/components/ProjectView.jsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
@@ -6,21 +5,36 @@ import { OrbitControls, TransformControls, Text } from '@react-three/drei';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { AxesHelper } from 'three';
 import io from 'socket.io-client';
-
+const backend_url = 'https://gt-3-d-backend.vercel.app/';
 const socket = io('http://localhost:5000');
 
 function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme, isTransformEnabled }) {
   const meshRef = useRef();
   const transformRef = useRef();
 
-  useFrame(() => {
+ useFrame(() => {
     if (meshRef.current && !transformRef.current?.dragging) {
-      meshRef.current.position.set(...modelState.position);
-      meshRef.current.rotation.set(...modelState.rotation);
-      meshRef.current.scale.set(...modelState.scale);
+      if (Array.isArray(modelState?.position) && modelState.position.length === 3) {
+        meshRef.current.position.set(...modelState.position);
+      } else {
+        meshRef.current.position.set(0, 0, 0); 
+      }
+      
+      // Safe rotation setting
+      if (Array.isArray(modelState?.rotation) && modelState.rotation.length === 3) {
+        meshRef.current.rotation.set(...modelState.rotation);
+      } else {
+        meshRef.current.rotation.set(0, 0, 0); 
+      }
+      
+     
+      if (Array.isArray(modelState?.scale) && modelState.scale.length === 3) {
+        meshRef.current.scale.set(...modelState.scale);
+      } else {
+        meshRef.current.scale.set(1, 1, 1); 
+      }
     }
   });
-
   const handleClick = (e) => {
     if (!isTransformEnabled) return;
     
@@ -99,13 +113,13 @@ function CameraSync({ onCameraUpdate }) {
   const lastUpdate = useRef(0);
 
   useFrame(() => {
-    // Throttle camera updates to avoid too many socket events
+  
     const now = Date.now();
-    if (now - lastUpdate.current > 100) { // Update every 100ms
+    if (now - lastUpdate.current > 100) { 
       if (onCameraUpdate && camera) {
         onCameraUpdate({
           position: [camera.position.x, camera.position.y, camera.position.z],
-          target: [0, 0, 0] // You can calculate target based on camera direction
+          target: [0, 0, 0] 
         });
         lastUpdate.current = now;
       }
@@ -115,11 +129,9 @@ function CameraSync({ onCameraUpdate }) {
   return null;
 }
 
-// Chat Modal Component
+
 function ChatModal({ isOpen, onClose, chat, newMessage, setNewMessage, onSendMessage, theme, currentTheme }) {
   const chatContainerRef = useRef(null);
-
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -131,7 +143,6 @@ function ChatModal({ isOpen, onClose, chat, newMessage, setNewMessage, onSendMes
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className={`rounded-lg shadow-xl w-full max-w-2xl h-[80vh] flex flex-col ${currentTheme.chatPanel}`}>
-        {/* Modal Header */}
         <div className={`flex justify-between items-center p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
           <h2 className="text-xl font-semibold flex items-center gap-2">
             💬 Project Chat
@@ -151,7 +162,6 @@ function ChatModal({ isOpen, onClose, chat, newMessage, setNewMessage, onSendMes
           </button>
         </div>
 
-        {/* Chat Messages */}
         <div 
           ref={chatContainerRef}
           className="flex-1 overflow-y-auto p-4 space-y-3"
@@ -185,7 +195,7 @@ function ChatModal({ isOpen, onClose, chat, newMessage, setNewMessage, onSendMes
           )}
         </div>
 
-        {/* Message Input */}
+      
         <div className={`p-4 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
           <div className="flex gap-2">
             <input
@@ -242,21 +252,21 @@ export default function ProjectView() {
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
-  // Apply theme to document
+
   useEffect(() => {
     document.documentElement.classList.toggle('light', theme === 'light');
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('projectViewTheme', theme);
   }, [theme]);
 
-  // Socket.io effects
+
   useEffect(() => {
     if (!projectId) return;
 
-    // Join the project room
+  
     socket.emit('joinProject', projectId);
 
-    // Listen for real-time events
+
     socket.on('newAnnotation', (annotation) => {
       setAnnotations(prev => [...prev, annotation]);
     });
@@ -266,11 +276,10 @@ export default function ProjectView() {
     });
 
     socket.on('cameraSync', (cameraData) => {
-      // Camera sync would be handled by OrbitControls automatically
+     
       console.log('Camera sync received:', cameraData);
     });
 
-    // User count tracking (basic implementation)
     socket.on('userJoined', (count) => {
       setOnlineUsers(count);
     });
@@ -288,36 +297,31 @@ export default function ProjectView() {
     };
   }, [projectId]);
 
-  // Load project data
   useEffect(() => {
     if (!projectId) return;
     
     const loadProjectData = async () => {
       try {
         setIsLoading(true);
-        const res = await fetch(`http://localhost:5000/api/projects/${projectId}`);
+        const res = await fetch(`${backend_url}api/projects/${projectId}`);
         const data = await res.json();
         
         if (data.success && data.data) {
           const project = data.data;
           setProjectData(project);
-          
-          // Load model state
           if (project.modelState) {
             setModelState(project.modelState);
           }
           
-          // Load annotations
+      
           if (project.annotations) {
             setAnnotations(project.annotations);
           }
           
-          // Load chat (if exists in your schema)
           if (project.chat) {
             setChat(project.chat);
           }
           
-          // Load model file
           if (project.modelPath) {
             try {
               const modelRes = await fetch(`http://localhost:5000/api/projects/${projectId}/model`);
@@ -351,7 +355,7 @@ export default function ProjectView() {
         annotations: annotations
       };
 
-      const res = await fetch(`http://localhost:5000/api/projects/${projectId}/scene`, {
+      const res = await fetch(`${backend_url}api/projects/${projectId}/scene`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(saveData),
@@ -377,9 +381,7 @@ export default function ProjectView() {
     
     const updatedState = { ...modelState, ...newState };
     setModelState(updatedState);
-    
-    // Auto-save on transform
-    saveScene();
+        saveScene();
   };
 
   const addAnnotation = (ann) => {
@@ -393,17 +395,13 @@ export default function ProjectView() {
       createdAt: new Date().toISOString()
     };
     
-    // Update local state
     setAnnotations(prev => [...prev, newAnn]);
-    
-    // Save to backend
-    fetch(`http://localhost:5000/api/projects/${projectId}/annotation`, {
+        fetch(`${backend_url}api/projects/${projectId}/annotation`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newAnn),
     });
     
-    // Broadcast via socket
     socket.emit('annotationAdded', { 
       projectId, 
       annotation: newAnn 
@@ -411,7 +409,6 @@ export default function ProjectView() {
   };
 
   const handleCameraUpdate = (cameraData) => {
-    // Broadcast camera position to other users
     socket.emit('cameraUpdate', { 
       projectId, 
       camera: cameraData 
@@ -429,11 +426,8 @@ export default function ProjectView() {
       timestamp: new Date().toISOString()
     };
 
-    // Update local state
     setChat(prev => [...prev, message]);
-    
-    // Broadcast via socket
-    socket.emit('chatMessage', { 
+        socket.emit('chatMessage', { 
       projectId, 
       message 
     });
@@ -609,7 +603,6 @@ export default function ProjectView() {
           </button>
         </div>
 
-        {/* Save Scene Button */}
         <button
           onClick={saveScene}
           disabled={saveStatus === 'saving'}
@@ -624,13 +617,12 @@ export default function ProjectView() {
            saveStatus === 'error' ? 'Error!' : 'Save Scene'}
         </button>
 
-        {/* Upload STL */}
         <label className={`px-3 py-1.5 rounded text-sm cursor-pointer ${currentTheme.button.upload}`}>
           📤 Upload STL
           <input type="file" accept=".stl" onChange={handleFileUpload} className="hidden" />
         </label>
 
-        {/* Chat Button */}
+     
         <button
           onClick={toggleChatModal}
           className={`px-4 py-1.5 rounded text-sm flex items-center gap-2 ${currentTheme.button.chat}`}
@@ -643,7 +635,7 @@ export default function ProjectView() {
           )}
         </button>
 
-        {/* User Info */}
+    
         <div className="flex items-center gap-2">
           <span className="text-sm">👤 {user.name}</span>
           <button
@@ -654,12 +646,12 @@ export default function ProjectView() {
           </button>
         </div>
 
-        {/* Online Users */}
+ 
         <div className="text-sm">
           👥 Online: {onlineUsers || 1}
         </div>
 
-        {/* Share Button */}
+ 
         <button
           onClick={copyShareLink}
           className="px-3 py-1.5 bg-green-600 text-white rounded text-sm"
@@ -690,7 +682,7 @@ export default function ProjectView() {
         </div>
       </div>
 
-      {/* Project Info Panel */}
+   
       <div className={`p-3 text-sm ${currentTheme.infoPanel}`}>
         <div className="flex gap-6 flex-wrap">
           <div>
@@ -708,9 +700,13 @@ export default function ProjectView() {
           <div>
             <strong>Chat Messages:</strong> {chat.length}
           </div>
-          <div>
-            <strong>Model Position:</strong> [{modelState.position?.join(', ')}]
-          </div>
+         <div>
+  <strong>Model Position:</strong> [
+  {Array.isArray(modelState?.position) 
+    ? modelState.position.join(', ') 
+    : '0, 0, 0'
+  }]
+</div>
           <div>
             <strong>Model File:</strong> {modelFile ? '✅ Loaded' : '❌ Not loaded'}
           </div>
@@ -724,7 +720,6 @@ export default function ProjectView() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col lg:flex-row">
-        {/* 3D Viewer - Takes full width on mobile, 2/3 on desktop */}
         <div className="flex-1 relative min-h-[400px] lg:min-h-auto">
           <Canvas camera={{ position: [5, 5, 5], fov: 50 }}>
             <ambientLight intensity={theme === 'dark' ? 0.6 : 0.8} />
@@ -745,7 +740,6 @@ export default function ProjectView() {
               enableZoom 
               enableRotate 
               onChange={() => {
-                // Camera changes are handled by CameraSync component
               }}
             />
             <gridHelper args={[10, 10]} />
@@ -754,7 +748,6 @@ export default function ProjectView() {
           </Canvas>
         </div>
 
-        {/* Annotations Panel Only - Chat is now in modal */}
         <div className="w-full lg:w-96 xl:w-80">
           <div className={`h-full p-4 overflow-y-auto ${currentTheme.annotationsPanel}`}>
             <h3 className="text-lg font-semibold mb-4">📝 Annotations ({annotations.length})</h3>
@@ -773,7 +766,11 @@ export default function ProjectView() {
                     </div>
                     <p className={currentTheme.text.primary}>{annotation.text}</p>
                     <div className={`text-xs mt-1 ${currentTheme.text.muted}`}>
-                      📍 Position: [{annotation.position?.join(', ') || 'N/A'}]
+                      📍 Position: [
+                      {Array.isArray(annotation.position) 
+                        ? annotation.position.join(', ') 
+                        : 'N/A'
+                      }]
                     </div>
                     {annotation.createdAt && (
                       <div className={`text-xs mt-1 ${currentTheme.text.muted}`}>
@@ -788,7 +785,6 @@ export default function ProjectView() {
         </div>
       </div>
 
-      {/* Chat Modal */}
       <ChatModal
         isOpen={isChatModalOpen}
         onClose={toggleChatModal}

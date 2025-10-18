@@ -7,7 +7,7 @@ export default function ProjectList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-
+const backend_url = 'https://gt-3-d-backend.vercel.app/';
   useEffect(() => {
     fetchProjects();
   }, []);
@@ -15,7 +15,7 @@ export default function ProjectList() {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:5000/api/projects');
+      const res = await fetch(`${backend_url}api/projects`);
       
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
@@ -46,7 +46,7 @@ export default function ProjectList() {
     }
 
     try {
-      const res = await fetch('http://localhost:5000/api/projects', {
+      const res = await fetch(`${backend_url}api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -78,7 +78,7 @@ export default function ProjectList() {
     }
 
     try {
-      const res = await fetch(`http://localhost:5000/api/projects/${projectId}`, {
+      const res = await fetch(`${backend_url}api/projects/${projectId}`, {
         method: 'DELETE'
       });
 
@@ -319,7 +319,6 @@ export default function ProjectList() {
           )}
         </div>
 
-        {/* Footer Stats */}
         {projects.length > 0 && (
           <div className="mt-4 text-sm text-gray-500">
             Showing {projects.length} project{projects.length !== 1 ? 's' : ''}
