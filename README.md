@@ -105,6 +105,25 @@ Tailwind CSS: Responsive and utility-first styling
 
 
 
+Attached Screens and video:
+
+login screen:
+<img width="847" height="453" alt="image" src="https://github.com/user-attachments/assets/83cc9e36-7057-4395-a952-3cf641705670" />
+
+
+
+Project lists Screen :
+<img width="1194" height="634" alt="image" src="https://github.com/user-attachments/assets/52e4396d-68f7-42df-a1e6-e9e7f216e1d1" />
+
+
+view project screen:
+
+<img width="1342" height="635" alt="image" src="https://github.com/user-attachments/assets/9a5272d2-0e75-4032-bee9-696edc8041dc" />
+
+
+
+
+
 
 
 
