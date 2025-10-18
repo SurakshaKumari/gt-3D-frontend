@@ -1,11 +1,15 @@
 // src/components/ProjectView.jsx
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, TransformControls, Text } from '@react-three/drei';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
+import { AxesHelper } from 'three';
+import io from 'socket.io-client';
 
-function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme }) {
+const socket = io('http://localhost:5000');
+
+function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme, isTransformEnabled }) {
   const meshRef = useRef();
   const transformRef = useRef();
 
@@ -18,11 +22,12 @@ function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme })
   });
 
   const handleClick = (e) => {
+    if (!isTransformEnabled) return;
+    
     e.stopPropagation();
     const text = prompt('Add annotation:');
     if (text) {
       const position = [e.point.x, e.point.y, e.point.z];
-      console.log("Adding annotation at position:", position);
       onAnnotation({ 
         position: position, 
         text 
@@ -31,7 +36,7 @@ function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme })
   };
 
   const handleTransform = (e) => {
-    if (!meshRef.current) return;
+    if (!meshRef.current || !isTransformEnabled) return;
     
     const newState = {
       position: [meshRef.current.position.x, meshRef.current.position.y, meshRef.current.position.z],
@@ -57,7 +62,8 @@ function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme })
       ref={transformRef}
       mode={modelState.mode}
       object={meshRef}
-      onMouseDown={() => transformRef.current.setMode(modelState.mode)}
+      enabled={isTransformEnabled}
+      onMouseDown={() => isTransformEnabled && transformRef.current?.setMode(modelState.mode)}
       onObjectChange={handleTransform}
     >
       <mesh ref={meshRef} onClick={handleClick}>
@@ -73,10 +79,7 @@ function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme })
 }
 
 function Annotation({ ann, theme }) {
-  // Ensure position is properly formatted
   const position = Array.isArray(ann.position) ? ann.position : [0, 0, 0];
-  
-  console.log("Rendering annotation:", ann.text, "at position:", position);
   
   return (
     <Text
@@ -91,10 +94,136 @@ function Annotation({ ann, theme }) {
   );
 }
 
+function CameraSync({ onCameraUpdate }) {
+  const { camera } = useThree();
+  const lastUpdate = useRef(0);
+
+  useFrame(() => {
+    // Throttle camera updates to avoid too many socket events
+    const now = Date.now();
+    if (now - lastUpdate.current > 100) { // Update every 100ms
+      if (onCameraUpdate && camera) {
+        onCameraUpdate({
+          position: [camera.position.x, camera.position.y, camera.position.z],
+          target: [0, 0, 0] // You can calculate target based on camera direction
+        });
+        lastUpdate.current = now;
+      }
+    }
+  });
+
+  return null;
+}
+
+// Chat Modal Component
+function ChatModal({ isOpen, onClose, chat, newMessage, setNewMessage, onSendMessage, theme, currentTheme }) {
+  const chatContainerRef = useRef(null);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chat]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className={`rounded-lg shadow-xl w-full max-w-2xl h-[80vh] flex flex-col ${currentTheme.chatPanel}`}>
+        {/* Modal Header */}
+        <div className={`flex justify-between items-center p-4 border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            💬 Project Chat
+            <span className="text-sm font-normal px-2 py-1 rounded-full bg-blue-500 text-white">
+              {chat.length} messages
+            </span>
+          </h2>
+          <button
+            onClick={onClose}
+            className={`p-2 rounded-full hover:bg-opacity-20 ${
+              theme === 'dark' ? 'hover:bg-gray-600' : 'hover:bg-gray-300'
+            }`}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Chat Messages */}
+        <div 
+          ref={chatContainerRef}
+          className="flex-1 overflow-y-auto p-4 space-y-3"
+        >
+          {chat.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-4xl mb-2">💬</div>
+              <p className={currentTheme.text.muted}>No messages yet. Start the conversation!</p>
+            </div>
+          ) : (
+            chat.map(message => (
+              <div key={message.id} className={`p-3 rounded-lg ${currentTheme.chatItem}`}>
+                <div className="flex justify-between items-start mb-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-semibold ${currentTheme.text.primary}`}>
+                      {message.userName}
+                    </span>
+                    {message.userId.includes('user-') && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-gray-500 text-white">
+                        Guest
+                      </span>
+                    )}
+                  </div>
+                  <span className={`text-xs ${currentTheme.text.muted}`}>
+                    {new Date(message.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+                <p className={currentTheme.text.primary}>{message.text}</p>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Message Input */}
+        <div className={`p-4 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && onSendMessage()}
+              placeholder="Type your message..."
+              className={`flex-1 border rounded-lg px-4 py-3 ${
+                theme === 'dark' 
+                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' 
+                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
+              } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            />
+            <button
+              onClick={onSendMessage}
+              disabled={!newMessage.trim()}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProjectView() {
   const { id: projectId } = useParams();
   const navigate = useNavigate();
-  const [userName] = useState(localStorage.getItem('userName'));
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem('currentUser');
+    return savedUser ? JSON.parse(savedUser) : { 
+      id: `user-${Date.now()}`, 
+      name: `User${Math.floor(Math.random() * 1000)}` 
+    };
+  });
   const [projectData, setProjectData] = useState(null);
   const [modelState, setModelState] = useState({
     position: [0, 0, 0],
@@ -103,13 +232,15 @@ export default function ProjectView() {
     mode: 'translate',
   });
   const [annotations, setAnnotations] = useState([]);
+  const [chat, setChat] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
   const [modelFile, setModelFile] = useState(null);
   const [saveStatus, setSaveStatus] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [theme, setTheme] = useState(() => {
-    // Get theme from localStorage or default to 'dark'
-    return localStorage.getItem('projectViewTheme') || 'dark';
-  });
+  const [theme, setTheme] = useState(() => localStorage.getItem('projectViewTheme') || 'dark');
+  const [isTransformEnabled, setIsTransformEnabled] = useState(true);
+  const [onlineUsers, setOnlineUsers] = useState(0);
+  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
   // Apply theme to document
   useEffect(() => {
@@ -118,14 +249,46 @@ export default function ProjectView() {
     localStorage.setItem('projectViewTheme', theme);
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-  };
-
+  // Socket.io effects
   useEffect(() => {
-    if (!userName) navigate('/');
-  }, [userName, navigate]);
+    if (!projectId) return;
 
+    // Join the project room
+    socket.emit('joinProject', projectId);
+
+    // Listen for real-time events
+    socket.on('newAnnotation', (annotation) => {
+      setAnnotations(prev => [...prev, annotation]);
+    });
+
+    socket.on('newChatMessage', (message) => {
+      setChat(prev => [...prev, message]);
+    });
+
+    socket.on('cameraSync', (cameraData) => {
+      // Camera sync would be handled by OrbitControls automatically
+      console.log('Camera sync received:', cameraData);
+    });
+
+    // User count tracking (basic implementation)
+    socket.on('userJoined', (count) => {
+      setOnlineUsers(count);
+    });
+
+    socket.on('userLeft', (count) => {
+      setOnlineUsers(count);
+    });
+
+    return () => {
+      socket.off('newAnnotation');
+      socket.off('newChatMessage');
+      socket.off('cameraSync');
+      socket.off('userJoined');
+      socket.off('userLeft');
+    };
+  }, [projectId]);
+
+  // Load project data
   useEffect(() => {
     if (!projectId) return;
     
@@ -135,78 +298,37 @@ export default function ProjectView() {
         const res = await fetch(`http://localhost:5000/api/projects/${projectId}`);
         const data = await res.json();
         
-        console.log("Full API response:", data);
-        
         if (data.success && data.data) {
           const project = data.data;
-          console.log("Project data:", project);
           setProjectData(project);
           
-          // Load modelState and annotations from root level (not inside scene)
+          // Load model state
           if (project.modelState) {
-            console.log("Loading modelState:", project.modelState);
-            setModelState({
-              position: project.modelState.position || [0, 0, 0],
-              rotation: project.modelState.rotation || [0, 0, 0],
-              scale: project.modelState.scale || [1, 1, 1],
-              mode: project.modelState.mode || 'translate'
-            });
-          } else {
-            console.log("No modelState found, using defaults");
+            setModelState(project.modelState);
           }
           
-          if (project.annotations && Array.isArray(project.annotations)) {
-            console.log("Loading annotations:", project.annotations);
-            
-            // Fix annotations - ensure they have proper position data
-            const fixedAnnotations = project.annotations.map((ann, index) => {
-              // If annotation doesn't have position, assign a default position
-              if (!ann.position || !Array.isArray(ann.position)) {
-                // Create positions around the model in a circle
-                const angle = (index / project.annotations.length) * Math.PI * 2;
-                const radius = 3;
-                const defaultPosition = [
-                  Math.cos(angle) * radius,
-                  Math.sin(angle) * radius,
-                  0
-                ];
-                console.log(`Fixed annotation ${index} position:`, defaultPosition);
-                return {
-                  ...ann,
-                  id: ann.id || `ann-${index}`,
-                  position: defaultPosition
-                };
-              }
-              return {
-                ...ann,
-                id: ann.id || `ann-${index}`
-              };
-            });
-            
-            setAnnotations(fixedAnnotations);
-          } else {
-            console.log("No annotations found or invalid format");
-            setAnnotations([]);
+          // Load annotations
+          if (project.annotations) {
+            setAnnotations(project.annotations);
           }
           
-          // Load model file if URL exists
-          if (project.modelUrl) {
+          // Load chat (if exists in your schema)
+          if (project.chat) {
+            setChat(project.chat);
+          }
+          
+          // Load model file
+          if (project.modelPath) {
             try {
-              console.log("Loading model from:", project.modelUrl);
-              const stlRes = await fetch(project.modelUrl);
-              if (stlRes.ok) {
-                const arrayBuffer = await stlRes.arrayBuffer();
+              const modelRes = await fetch(`http://localhost:5000/api/projects/${projectId}/model`);
+              if (modelRes.ok) {
+                const arrayBuffer = await modelRes.arrayBuffer();
                 setModelFile(arrayBuffer);
-                console.log("Model file loaded successfully");
               }
             } catch (err) {
               console.error('Failed to load model file:', err);
             }
-          } else {
-            console.log("No modelUrl found");
           }
-        } else {
-          console.error("API response format error:", data);
         }
       } catch (err) {
         console.error('Load project failed', err);
@@ -225,17 +347,9 @@ export default function ProjectView() {
     setSaveStatus('saving');
     try {
       const saveData = {
-        modelState: {
-          position: modelState.position,
-          rotation: modelState.rotation,
-          scale: modelState.scale,
-          mode: modelState.mode
-        },
-        annotations: annotations,
-        lastSaved: new Date().toISOString()
+        modelState: modelState,
+        annotations: annotations
       };
-
-      console.log("Saving data:", saveData);
 
       const res = await fetch(`http://localhost:5000/api/projects/${projectId}/scene`, {
         method: 'PUT',
@@ -244,7 +358,6 @@ export default function ProjectView() {
       });
 
       const result = await res.json();
-      console.log("Save response:", result);
       
       if (res.ok && result.success) {
         setSaveStatus('saved');
@@ -260,21 +373,72 @@ export default function ProjectView() {
   };
 
   const handleTransform = (newState) => {
-    setModelState(prev => ({
-      ...prev,
-      ...newState
-    }));
+    if (!isTransformEnabled) return;
+    
+    const updatedState = { ...modelState, ...newState };
+    setModelState(updatedState);
+    
+    // Auto-save on transform
+    saveScene();
   };
 
   const addAnnotation = (ann) => {
+    if (!isTransformEnabled) return;
+    
     const newAnn = {
       id: Date.now().toString(),
       ...ann,
-      userId: userName,
+      userId: user.id,
+      userName: user.name,
       createdAt: new Date().toISOString()
     };
-    console.log("Adding new annotation:", newAnn);
+    
+    // Update local state
     setAnnotations(prev => [...prev, newAnn]);
+    
+    // Save to backend
+    fetch(`http://localhost:5000/api/projects/${projectId}/annotation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newAnn),
+    });
+    
+    // Broadcast via socket
+    socket.emit('annotationAdded', { 
+      projectId, 
+      annotation: newAnn 
+    });
+  };
+
+  const handleCameraUpdate = (cameraData) => {
+    // Broadcast camera position to other users
+    socket.emit('cameraUpdate', { 
+      projectId, 
+      camera: cameraData 
+    });
+  };
+
+  const sendMessage = () => {
+    if (!newMessage.trim()) return;
+
+    const message = {
+      id: Date.now().toString(),
+      text: newMessage,
+      userId: user.id,
+      userName: user.name,
+      timestamp: new Date().toISOString()
+    };
+
+    // Update local state
+    setChat(prev => [...prev, message]);
+    
+    // Broadcast via socket
+    socket.emit('chatMessage', { 
+      projectId, 
+      message 
+    });
+    
+    setNewMessage('');
   };
 
   const handleFileUpload = async (e) => {
@@ -285,9 +449,6 @@ export default function ProjectView() {
     }
 
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      setModelFile(arrayBuffer);
-
       const formData = new FormData();
       formData.append('model', file);
       
@@ -296,34 +457,47 @@ export default function ProjectView() {
         body: formData,
       });
 
-      if (!uploadRes.ok) {
+      if (uploadRes.ok) {
+        const result = await uploadRes.json();
+        if (result.success) {
+          // Reload the model
+          const modelRes = await fetch(`http://localhost:5000/api/projects/${projectId}/model`);
+          if (modelRes.ok) {
+            const arrayBuffer = await modelRes.arrayBuffer();
+            setModelFile(arrayBuffer);
+          }
+        }
+      } else {
         throw new Error('Upload failed');
       }
-
-      // Auto-save after upload
-      await saveScene();
     } catch (err) {
       console.error('Upload failed', err);
       alert('Failed to upload model');
     }
   };
 
-  const deleteAnnotation = (annotationId) => {
-    setAnnotations(prev => prev.filter(ann => ann.id !== annotationId));
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
-  // Debug info
-  console.log("Current modelState:", modelState);
-  console.log("Current annotations:", annotations);
-  console.log("Model file exists:", !!modelFile);
+  const changeUser = () => {
+    const name = prompt('Enter your name:', user.name);
+    if (name) {
+      const newUser = { ...user, name };
+      setUser(newUser);
+      localStorage.setItem('currentUser', JSON.stringify(newUser));
+    }
+  };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-900 dark:bg-gray-50">
-        <div className="text-white dark:text-gray-900 text-lg">Loading project...</div>
-      </div>
-    );
-  }
+  const copyShareLink = () => {
+    const link = `${window.location.origin}/project/${projectId}`;
+    navigator.clipboard.writeText(link);
+    alert('Share link copied to clipboard!');
+  };
+
+  const toggleChatModal = () => {
+    setIsChatModalOpen(!isChatModalOpen);
+  };
 
   // Theme classes
   const themeClasses = {
@@ -332,7 +506,9 @@ export default function ProjectView() {
       toolbar: 'bg-gray-800 text-white',
       infoPanel: 'bg-gray-700 text-white',
       annotationsPanel: 'bg-gray-800 text-white',
+      chatPanel: 'bg-gray-800 text-white',
       annotationItem: 'bg-gray-700',
+      chatItem: 'bg-gray-700',
       button: {
         active: 'bg-blue-600',
         inactive: 'bg-gray-700 hover:bg-gray-600',
@@ -343,7 +519,8 @@ export default function ProjectView() {
           default: 'bg-purple-600 hover:bg-purple-700'
         },
         upload: 'bg-green-700 hover:bg-green-600',
-        back: 'bg-gray-700 hover:bg-gray-600'
+        back: 'bg-gray-700 hover:bg-gray-600',
+        chat: 'bg-purple-600 hover:bg-purple-700'
       },
       text: {
         primary: 'text-white',
@@ -356,7 +533,9 @@ export default function ProjectView() {
       toolbar: 'bg-white text-gray-800 border-b border-gray-200',
       infoPanel: 'bg-gray-100 text-gray-800 border-b border-gray-200',
       annotationsPanel: 'bg-white text-gray-800 border-l border-gray-200',
+      chatPanel: 'bg-white text-gray-800 border-l border-gray-200',
       annotationItem: 'bg-gray-100 border border-gray-200',
+      chatItem: 'bg-gray-100 border border-gray-200',
       button: {
         active: 'bg-blue-500 text-white',
         inactive: 'bg-gray-200 text-gray-700 hover:bg-gray-300',
@@ -367,7 +546,8 @@ export default function ProjectView() {
           default: 'bg-purple-500 text-white hover:bg-purple-600'
         },
         upload: 'bg-green-500 text-white hover:bg-green-600',
-        back: 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        back: 'bg-gray-200 text-gray-700 hover:bg-gray-300',
+        chat: 'bg-purple-500 text-white hover:bg-purple-600'
       },
       text: {
         primary: 'text-gray-900',
@@ -379,16 +559,33 @@ export default function ProjectView() {
 
   const currentTheme = themeClasses[theme];
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-900 dark:bg-gray-50">
+        <div className="text-white dark:text-gray-900 text-lg">Loading project...</div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex flex-col h-screen ${currentTheme.background}`}>
       {/* Enhanced Toolbar */}
       <div className={`p-3 flex gap-2 items-center flex-wrap ${currentTheme.toolbar}`}>
         <div className="flex gap-2">
           <button
+            onClick={() => setIsTransformEnabled(!isTransformEnabled)}
+            className={`px-3 py-1.5 text-sm rounded ${
+              isTransformEnabled ? currentTheme.button.active : currentTheme.button.inactive
+            }`}
+          >
+            {isTransformEnabled ? '✏️ Editing' : '👀 View Only'}
+          </button>
+          <button
             onClick={() => setModelState(p => ({ ...p, mode: 'translate' }))}
             className={`px-3 py-1.5 text-sm rounded ${
               modelState.mode === 'translate' ? currentTheme.button.active : currentTheme.button.inactive
             }`}
+            disabled={!isTransformEnabled}
           >
             Move
           </button>
@@ -397,6 +594,7 @@ export default function ProjectView() {
             className={`px-3 py-1.5 text-sm rounded ${
               modelState.mode === 'rotate' ? currentTheme.button.active : currentTheme.button.inactive
             }`}
+            disabled={!isTransformEnabled}
           >
             Rotate
           </button>
@@ -405,6 +603,7 @@ export default function ProjectView() {
             className={`px-3 py-1.5 text-sm rounded ${
               modelState.mode === 'scale' ? currentTheme.button.active : currentTheme.button.inactive
             }`}
+            disabled={!isTransformEnabled}
           >
             Scale
           </button>
@@ -427,9 +626,46 @@ export default function ProjectView() {
 
         {/* Upload STL */}
         <label className={`px-3 py-1.5 rounded text-sm cursor-pointer ${currentTheme.button.upload}`}>
-          Upload STL
+          📤 Upload STL
           <input type="file" accept=".stl" onChange={handleFileUpload} className="hidden" />
         </label>
+
+        {/* Chat Button */}
+        <button
+          onClick={toggleChatModal}
+          className={`px-4 py-1.5 rounded text-sm flex items-center gap-2 ${currentTheme.button.chat}`}
+        >
+          💬 Chat
+          {chat.length > 0 && (
+            <span className="bg-white text-purple-600 rounded-full w-5 h-5 text-xs flex items-center justify-center">
+              {chat.length}
+            </span>
+          )}
+        </button>
+
+        {/* User Info */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm">👤 {user.name}</span>
+          <button
+            onClick={changeUser}
+            className="px-2 py-1 text-xs bg-blue-600 text-white rounded"
+          >
+            Change
+          </button>
+        </div>
+
+        {/* Online Users */}
+        <div className="text-sm">
+          👥 Online: {onlineUsers || 1}
+        </div>
+
+        {/* Share Button */}
+        <button
+          onClick={copyShareLink}
+          className="px-3 py-1.5 bg-green-600 text-white rounded text-sm"
+        >
+          🔗 Share Project
+        </button>
 
         {/* Theme Toggle */}
         <button
@@ -437,34 +673,19 @@ export default function ProjectView() {
           className={`px-3 py-1.5 rounded text-sm flex items-center gap-2 ${
             theme === 'dark' ? 'bg-yellow-500 text-gray-900' : 'bg-gray-800 text-white'
           }`}
-          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
         >
-          {theme === 'dark' ? (
-            <>
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-              </svg>
-              Light
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
-              Dark
-            </>
-          )}
+          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
         </button>
 
         <div className="ml-auto flex items-center gap-4">
           <span className="text-sm">
-            Project: {projectData?.title || projectData?.name || 'Untitled'}
+            📁 Project: {projectData?.title || projectData?.name || 'Untitled'}
           </span>
           <button
             onClick={() => navigate('/projects')}
             className={`px-3 py-1.5 rounded text-sm ${currentTheme.button.back}`}
           >
-            Back to Projects
+            ← Back to Projects
           </button>
         </div>
       </div>
@@ -485,10 +706,13 @@ export default function ProjectView() {
             <strong>Annotations:</strong> {annotations.length}
           </div>
           <div>
+            <strong>Chat Messages:</strong> {chat.length}
+          </div>
+          <div>
             <strong>Model Position:</strong> [{modelState.position?.join(', ')}]
           </div>
           <div>
-            <strong>Model File:</strong> {modelFile ? 'Loaded' : 'Not loaded'}
+            <strong>Model File:</strong> {modelFile ? '✅ Loaded' : '❌ Not loaded'}
           </div>
           {projectData?.createdAt && (
             <div>
@@ -499,9 +723,9 @@ export default function ProjectView() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex">
-        {/* 3D Viewer */}
-        <div className="flex-1 relative">
+      <div className="flex-1 flex flex-col lg:flex-row">
+        {/* 3D Viewer - Takes full width on mobile, 2/3 on desktop */}
+        <div className="flex-1 relative min-h-[400px] lg:min-h-auto">
           <Canvas camera={{ position: [5, 5, 5], fov: 50 }}>
             <ambientLight intensity={theme === 'dark' ? 0.6 : 0.8} />
             <pointLight position={[10, 10, 10]} intensity={theme === 'dark' ? 1 : 1.2} />
@@ -511,53 +735,70 @@ export default function ProjectView() {
               onAnnotation={addAnnotation}
               modelFile={modelFile}
               theme={theme}
+              isTransformEnabled={isTransformEnabled}
             />
             {annotations.map(ann => (
               <Annotation key={ann.id} ann={ann} theme={theme} />
             ))}
-            <OrbitControls enablePan enableZoom enableRotate />
+            <OrbitControls 
+              enablePan 
+              enableZoom 
+              enableRotate 
+              onChange={() => {
+                // Camera changes are handled by CameraSync component
+              }}
+            />
             <gridHelper args={[10, 10]} />
             <axesHelper args={[5]} />
+            <CameraSync onCameraUpdate={handleCameraUpdate} />
           </Canvas>
         </div>
 
-        {/* Annotations Panel */}
-        <div className={`w-80 p-4 overflow-y-auto ${currentTheme.annotationsPanel}`}>
-          <h3 className="text-lg font-semibold mb-4">Annotations ({annotations.length})</h3>
-          {annotations.length === 0 ? (
-            <p className={`text-sm ${currentTheme.text.muted}`}>
-              No annotations yet. Click on the model to add one.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {annotations.map(annotation => (
-                <div key={annotation.id} className={`p-3 rounded-lg ${currentTheme.annotationItem}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <span className={`text-sm ${currentTheme.text.secondary}`}>
-                      {annotation.userId || 'Unknown'}
-                    </span>
-                    <button
-                      onClick={() => deleteAnnotation(annotation.id)}
-                      className={`text-red-500 hover:text-red-700 text-sm`}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  <p className={currentTheme.text.primary}>{annotation.text}</p>
-                  <div className={`text-xs mt-1 ${currentTheme.text.muted}`}>
-                    Position: [{annotation.position?.join(', ') || 'N/A'}]
-                  </div>
-                  {annotation.createdAt && (
-                    <div className={`text-xs mt-1 ${currentTheme.text.muted}`}>
-                      {new Date(annotation.createdAt).toLocaleString()}
+        {/* Annotations Panel Only - Chat is now in modal */}
+        <div className="w-full lg:w-96 xl:w-80">
+          <div className={`h-full p-4 overflow-y-auto ${currentTheme.annotationsPanel}`}>
+            <h3 className="text-lg font-semibold mb-4">📝 Annotations ({annotations.length})</h3>
+            {annotations.length === 0 ? (
+              <p className={`text-sm ${currentTheme.text.muted}`}>
+                No annotations yet. Click on the model to add one.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {annotations.map(annotation => (
+                  <div key={annotation.id} className={`p-3 rounded-lg ${currentTheme.annotationItem}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <span className={`text-sm ${currentTheme.text.secondary}`}>
+                        👤 {annotation.userName || 'Unknown'}
+                      </span>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                    <p className={currentTheme.text.primary}>{annotation.text}</p>
+                    <div className={`text-xs mt-1 ${currentTheme.text.muted}`}>
+                      📍 Position: [{annotation.position?.join(', ') || 'N/A'}]
+                    </div>
+                    {annotation.createdAt && (
+                      <div className={`text-xs mt-1 ${currentTheme.text.muted}`}>
+                        🕒 {new Date(annotation.createdAt).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Chat Modal */}
+      <ChatModal
+        isOpen={isChatModalOpen}
+        onClose={toggleChatModal}
+        chat={chat}
+        newMessage={newMessage}
+        setNewMessage={setNewMessage}
+        onSendMessage={sendMessage}
+        theme={theme}
+        currentTheme={currentTheme}
+      />
     </div>
   );
 }
