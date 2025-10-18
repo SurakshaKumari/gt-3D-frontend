@@ -105,7 +105,7 @@ Tailwind CSS: Responsive and utility-first styling
 
 
 
-Attached Screens and video:
+Attached Screens:
 
 login screen:
 <img width="847" height="453" alt="image" src="https://github.com/user-attachments/assets/83cc9e36-7057-4395-a952-3cf641705670" />
