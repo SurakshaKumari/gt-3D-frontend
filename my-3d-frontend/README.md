@@ -32,8 +32,8 @@ npm install
 2) Create `.env` (optional, for custom backends):
 ```
 REACT_APP_API_BASE=https://gt-3-d-backend.vercel.app/
-REACT_APP_SOCKET_URL=http://localhost:5000
-REACT_APP_FILE_API_BASE=http://localhost:5000
+REACT_APP_SOCKET_URL=https://gt-3-d-backend.vercel.app/
+REACT_APP_FILE_API_BASE=https://gt-3-d-backend.vercel.app/
 REACT_APP_DEFAULT_THEME=dark
 ```
 3) Start dev server:
