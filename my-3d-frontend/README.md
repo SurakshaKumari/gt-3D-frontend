@@ -1,70 +1,69 @@
-# Getting Started with Create React App
+# 3D Collaboration Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+React app with Three.js (via @react-three/fiber) for collaborative 3D projects: dummy login, projects CRUD, STL upload/visualization, viewport controls, transform tools, annotations, real-time chat and camera sync, theme toggle, and persistence.
 
-## Available Scripts
+## Demo Users (Dummy Login)
+- Enter any name on the login screen (e.g., "Alice", "Bob"). No password required.
 
-In the project directory, you can run:
+## Features Implemented
+- Dummy login with localStorage
+- Create/list/delete projects
+- Shareable project link `/project/:id`
+- 3D viewport (pan/zoom/rotate) with OrbitControls
+- TransformControls for move/rotate/scale
+- STL upload (fallback primitives: box/sphere/cone)
+- Click-to-add annotations (stored with position, text, user)
+- Save and restore scene (model transform + annotations)
+- Real-time chat (Socket.IO) and camera sync
+- Camera focus on annotation click
+- Responsive UI + Dark/Light theme toggle
 
-### `npm start`
+## Tech Stack
+- React 18, React Router
+- Three.js via @react-three/fiber and @react-three/drei
+- Socket.IO client
+- TailwindCSS classes (pre-configured)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Setup
+1) Install dependencies:
+```
+npm install
+```
+2) Create `.env` (optional, for custom backends):
+```
+REACT_APP_API_BASE=https://gt-3-d-backend.vercel.app/
+REACT_APP_SOCKET_URL=http://localhost:5000
+REACT_APP_FILE_API_BASE=http://localhost:5000
+REACT_APP_DEFAULT_THEME=dark
+```
+3) Start dev server:
+```
+npm start
+```
+Open `http://localhost:3000`.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Backend Assumptions
+The default API base points to an existing backend for projects and scene data. File upload and Socket.IO default to `http://localhost:5000`. Endpoints used:
+- `GET  {API_BASE}/api/projects`
+- `POST {API_BASE}/api/projects`
+- `DELETE {API_BASE}/api/projects/:id`
+- `GET  {API_BASE}/api/projects/:id`
+- `PUT  {API_BASE}/api/projects/:id/scene`
+- `POST {API_BASE}/api/projects/:id/annotation`
+- `POST {API_BASE}/api/projects/:id/chat` (optional, non-blocking)
+- `POST {FILE_API_BASE}/api/projects/:id/model` (multipart .stl)
+- `GET  {FILE_API_BASE}/api/projects/:id/model` (ArrayBuffer)
 
-### `npm test`
+WebSocket events:
+- Emit `joinProject`, `chatMessage`, `annotationAdded`, `cameraUpdate`
+- Receive `newChatMessage`, `newAnnotation`, `cameraSync`, `userJoined`, `userLeft`
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Notes
+- STEP is not natively supported; if unavailable, pick a primitive. STL is supported.
+- Camera sync now applies incoming updates to all clients.
+- Chat persistence call is best-effort; if backend lacks the endpoint, UI still works.
 
-### `npm run build`
+## Scripts
+- `npm start` - run dev server
+- `npm run build` - production build
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)

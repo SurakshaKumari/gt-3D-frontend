@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE } from '../config';
 
 export default function ProjectList() {
   const [projects, setProjects] = useState([]);
@@ -7,7 +8,7 @@ export default function ProjectList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-const backend_url = 'https://gt-3-d-backend.vercel.app/';
+const backend_url = API_BASE;
   useEffect(() => {
     fetchProjects();
   }, []);

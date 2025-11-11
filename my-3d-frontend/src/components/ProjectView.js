@@ -3,12 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, TransformControls, Text } from '@react-three/drei';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
-import { AxesHelper } from 'three';
 import io from 'socket.io-client';
-const backend_url = 'https://gt-3-d-backend.vercel.app/';
-const socket = io('http://localhost:5000');
+import { API_BASE, SOCKET_URL, FILE_API_BASE, APP_DEFAULT_THEME } from '../config';
+const backend_url = API_BASE;
+const socket = io(SOCKET_URL);
 
-function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme, isTransformEnabled }) {
+function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme, isTransformEnabled, modelType }) {
   const meshRef = useRef();
   const transformRef = useRef();
 
@@ -83,6 +83,10 @@ function SceneModel({ modelState, onTransform, onAnnotation, modelFile, theme, i
       <mesh ref={meshRef} onClick={handleClick}>
         {geometry ? (
           <primitive object={geometry} attach="geometry" />
+        ) : modelType === 'sphere' ? (
+          <sphereGeometry args={[1.2, 32, 32]} />
+        ) : modelType === 'cone' ? (
+          <coneGeometry args={[1.2, 2, 32]} />
         ) : (
           <boxGeometry args={[2, 2, 2]} />
         )}
@@ -125,6 +129,28 @@ function CameraSync({ onCameraUpdate }) {
       }
     }
   });
+
+  return null;
+}
+
+function RemoteCameraApplier({ remoteCamera }) {
+  const { camera, controls } = useThree((state) => ({
+    camera: state.camera,
+    controls: state.controls
+  }));
+
+  useEffect(() => {
+    if (!remoteCamera || !camera) return;
+    const { position, target } = remoteCamera;
+    if (Array.isArray(position) && position.length === 3) {
+      camera.position.set(position[0], position[1], position[2]);
+    }
+    // Try to set OrbitControls target if available
+    if (controls && Array.isArray(target) && target.length === 3 && controls.target) {
+      controls.target.set(target[0], target[1], target[2]);
+      controls.update();
+    }
+  }, [remoteCamera, camera, controls]);
 
   return null;
 }
@@ -247,10 +273,13 @@ export default function ProjectView() {
   const [modelFile, setModelFile] = useState(null);
   const [saveStatus, setSaveStatus] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [theme, setTheme] = useState(() => localStorage.getItem('projectViewTheme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('projectViewTheme') || APP_DEFAULT_THEME);
   const [isTransformEnabled, setIsTransformEnabled] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+  const [remoteCamera, setRemoteCamera] = useState(null);
+  const [modelType, setModelType] = useState('box'); // box | sphere | cone
+  const orbitRef = useRef();
 
 
   useEffect(() => {
@@ -276,8 +305,7 @@ export default function ProjectView() {
     });
 
     socket.on('cameraSync', (cameraData) => {
-     
-      console.log('Camera sync received:', cameraData);
+      setRemoteCamera(cameraData);
     });
 
     socket.on('userJoined', (count) => {
@@ -324,7 +352,7 @@ export default function ProjectView() {
           
           if (project.modelPath) {
             try {
-              const modelRes = await fetch(`http://localhost:5000/api/projects/${projectId}/model`);
+              const modelRes = await fetch(`${FILE_API_BASE}/api/projects/${projectId}/model`);
               if (modelRes.ok) {
                 const arrayBuffer = await modelRes.arrayBuffer();
                 setModelFile(arrayBuffer);
@@ -431,6 +459,12 @@ export default function ProjectView() {
       projectId, 
       message 
     });
+    // Attempt to persist chat if backend supports it (non-blocking)
+    fetch(`${backend_url}api/projects/${projectId}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    }).catch(() => {});
     
     setNewMessage('');
   };
@@ -446,7 +480,7 @@ export default function ProjectView() {
       const formData = new FormData();
       formData.append('model', file);
       
-      const uploadRes = await fetch(`http://localhost:5000/api/projects/${projectId}/model`, {
+      const uploadRes = await fetch(`${FILE_API_BASE}/api/projects/${projectId}/model`, {
         method: 'POST',
         body: formData,
       });
@@ -455,7 +489,7 @@ export default function ProjectView() {
         const result = await uploadRes.json();
         if (result.success) {
           // Reload the model
-          const modelRes = await fetch(`http://localhost:5000/api/projects/${projectId}/model`);
+          const modelRes = await fetch(`${FILE_API_BASE}/api/projects/${projectId}/model`);
           if (modelRes.ok) {
             const arrayBuffer = await modelRes.arrayBuffer();
             setModelFile(arrayBuffer);
@@ -491,6 +525,19 @@ export default function ProjectView() {
 
   const toggleChatModal = () => {
     setIsChatModalOpen(!isChatModalOpen);
+  };
+
+  const focusCameraOn = (position) => {
+    if (!Array.isArray(position) || position.length !== 3) return;
+    // Emit a camera target update so other users align as well
+    handleCameraUpdate({
+      position: position.map((v, i) => v + (i === 2 ? 5 : 0)), // offset z slightly
+      target: position
+    });
+    setRemoteCamera({
+      position: position.map((v, i) => v + (i === 2 ? 5 : 0)),
+      target: position
+    });
   };
 
   // Theme classes
@@ -574,6 +621,32 @@ export default function ProjectView() {
           >
             {isTransformEnabled ? '✏️ Editing' : '👀 View Only'}
           </button>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setModelType('box')}
+              className={`px-3 py-1.5 text-sm rounded ${modelType === 'box' ? currentTheme.button.active : currentTheme.button.inactive}`}
+              disabled={!!modelFile}
+              title={modelFile ? 'Primitive disabled when STL is loaded' : 'Use Box primitive'}
+            >
+              Box
+            </button>
+            <button
+              onClick={() => setModelType('sphere')}
+              className={`px-3 py-1.5 text-sm rounded ${modelType === 'sphere' ? currentTheme.button.active : currentTheme.button.inactive}`}
+              disabled={!!modelFile}
+              title={modelFile ? 'Primitive disabled when STL is loaded' : 'Use Sphere primitive'}
+            >
+              Sphere
+            </button>
+            <button
+              onClick={() => setModelType('cone')}
+              className={`px-3 py-1.5 text-sm rounded ${modelType === 'cone' ? currentTheme.button.active : currentTheme.button.inactive}`}
+              disabled={!!modelFile}
+              title={modelFile ? 'Primitive disabled when STL is loaded' : 'Use Cone primitive'}
+            >
+              Cone
+            </button>
+          </div>
           <button
             onClick={() => setModelState(p => ({ ...p, mode: 'translate' }))}
             className={`px-3 py-1.5 text-sm rounded ${
@@ -731,11 +804,13 @@ export default function ProjectView() {
               modelFile={modelFile}
               theme={theme}
               isTransformEnabled={isTransformEnabled}
+              modelType={modelType}
             />
             {annotations.map(ann => (
               <Annotation key={ann.id} ann={ann} theme={theme} />
             ))}
             <OrbitControls 
+              ref={orbitRef}
               enablePan 
               enableZoom 
               enableRotate 
@@ -743,8 +818,9 @@ export default function ProjectView() {
               }}
             />
             <gridHelper args={[10, 10]} />
-            <axesHelper args={[5]} />
+         
             <CameraSync onCameraUpdate={handleCameraUpdate} />
+            <RemoteCameraApplier remoteCamera={remoteCamera} />
           </Canvas>
         </div>
 
@@ -763,6 +839,12 @@ export default function ProjectView() {
                       <span className={`text-sm ${currentTheme.text.secondary}`}>
                         👤 {annotation.userName || 'Unknown'}
                       </span>
+                      <button
+                        className="text-xs px-2 py-1 rounded bg-blue-600 text-white"
+                        onClick={() => focusCameraOn(annotation.position)}
+                      >
+                        Focus
+                      </button>
                     </div>
                     <p className={currentTheme.text.primary}>{annotation.text}</p>
                     <div className={`text-xs mt-1 ${currentTheme.text.muted}`}>
