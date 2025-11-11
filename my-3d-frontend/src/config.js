@@ -6,7 +6,7 @@ export const API_BASE =
 	process.env.REACT_APP_API_BASE || 'https://gt-3-d-backend.vercel.app/';
 
 export const SOCKET_URL =
-	process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
+	process.env.REACT_APP_SOCKET_URL || 'https://gt-3d-backend-23qd.onrender.com';
 
 export const FILE_API_BASE =
 	process.env.REACT_APP_FILE_API_BASE || SOCKET_URL;
