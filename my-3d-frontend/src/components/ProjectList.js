@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../config';
 
@@ -9,11 +9,8 @@ export default function ProjectList() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 const backend_url = API_BASE;
-  useEffect(() => {
-    fetchProjects();
-  }, []);
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch(`${backend_url}api/projects`);
@@ -38,7 +35,11 @@ const backend_url = API_BASE;
     } finally {
       setLoading(false);
     }
-  };
+  }, [backend_url]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   const createProject = async () => {
     if (!title.trim()) {
