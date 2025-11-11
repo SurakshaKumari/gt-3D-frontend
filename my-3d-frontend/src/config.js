@@ -3,7 +3,7 @@
 // Adjust REACT_APP_API_BASE and REACT_APP_SOCKET_URL for your backend deployment.
 
 export const API_BASE =
-	process.env.REACT_APP_API_BASE || 'https://gt-3d-backend-23qd.onrender.com';
+	process.env.REACT_APP_API_BASE || 'https://gt-3d-backend-23qd.onrender.com/';
 
 export const SOCKET_URL =
 	process.env.REACT_APP_SOCKET_URL || 'https://gt-3d-backend-23qd.onrender.com';
